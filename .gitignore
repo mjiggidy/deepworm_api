@@ -133,3 +133,4 @@ dmypy.json
 .pyre/
 deepworm/config.py
 deepworm/config.py
+deepworm/server_main.py
