@@ -1,18 +1,20 @@
 import flask
-import subprocess, pathlib
+import subprocess, pathlib, tempfile, sys
 from upco_tools import upco_ale, upco_timecode
+from ..db import db
+
 
 # TAPEWORM Rest API
 # ========================================================================
 # Currently v1
 
-dailies = flask.Blueprint("dailies", __name__, )
+dailies = flask.Blueprint("dailies", __name__, url_prefix="/dailies")
 
 @dailies.route("/v1/shows/")
 def list_shows_rest():
 	
-	cur = mysql.connection.cursor()
-	cur.execute("SELECT hex(guid_show) as guid_show, title FROM dailies_shows ORDER BY title")
+	cur = db.connection.cursor()
+	cur.execute("SELECT bin_to_uuid(guid_show) as guid_show, title FROM dailies_shows ORDER BY title")
 	results = cur.fetchall()
 	
 	return flask.jsonify(results)
@@ -20,8 +22,8 @@ def list_shows_rest():
 @dailies.route("/v1/shows/<string:show>")
 def list_show_details_rest(show):
 	
-	cur = mysql.connection.cursor()
-	cur.execute("SELECT hex(guid_show) as guid_show, title FROM dailies_shows WHERE guid_show = unhex(%s) LIMIT 1", (show,))
+	cur = db.connection.cursor()
+	cur.execute("SELECT bin_to_uuid(guid_show) as guid_show, title FROM dailies_shows WHERE guid_show = uuid_to_bin(%s) LIMIT 1", (show,))
 	results = cur.fetchall()
 	
 	return flask.jsonify(results)
@@ -29,10 +31,10 @@ def list_show_details_rest(show):
 @dailies.route("/v1/shots/<string:show>")
 def list_shots_by_show(show):
 
-	cur = mysql.connection.cursor()	
+	cur = db.connection.cursor()	
 	cur.execute("""
 		SELECT
-			hex(dailies_shots.guid_shot) as guid_shot,
+			bin_to_uuid(dailies_shots.guid_shot) as guid_shot,
 			shot,
 			frm_start,
 			frm_end,
@@ -44,7 +46,7 @@ def list_shots_by_show(show):
 		FROM dailies_shots
 		LEFT JOIN dailies_metadata ON dailies_metadata.guid_shot = dailies_shots.guid_shot
 		#LEFT JOIN dailies_proxies ON dailies_proxies.guid_shot = dailies_shots.guid_shot
-		WHERE dailies_shots.guid_show = unhex(%s)
+		WHERE dailies_shots.guid_show = uuid_to_bin(%s)
 		ORDER BY dailies_metadata.camroll, dailies_shots.frm_start
 	""", (show,))
 	results = cur.fetchall()
@@ -54,11 +56,11 @@ def list_shots_by_show(show):
 @dailies.route("/v1/shots/<string:shot>/extended")
 def list_shot_exteded(shot):
 
-	cur = mysql.connection.cursor()	
+	cur = db.connection.cursor()	
 	cur.execute("""
 		SELECT extended_info
 		FROM dailies_metadata
-		WHERE guid_shot = unhex(%s)
+		WHERE guid_shot = uuid_to_bin(%s)
 		LIMIT 1
 	""", (shot,))
 	results = cur.fetchone()
@@ -79,18 +81,18 @@ def diva_restore_request():
 	
 	for shot in flask.request.json:
 		print(f"Restoring {shot}")
-		cur = mysql.connection.cursor()
+		cur = db.connection.cursor()
 		cur.execute("""
 			SELECT
-				hex(dailies_diva.guid_shot) as guid_shot,
-				hex(dailies_diva.guid_show) as guid_show,
+				bin_to_uuid(dailies_diva.guid_shot) as guid_shot,
+				bin_to_uuid(dailies_diva.guid_show) as guid_show,
 				dailies_diva.object_name as object_name,
 				diva_config.category as category,
 				diva_config.src_dest as src_dest
 			FROM
 				dailies_diva, diva_config
 			WHERE
-				diva_config.guid_show= dailies_diva.guid_show AND dailies_diva.guid_shot = UNHEX(%s)
+				diva_config.guid_show= dailies_diva.guid_show AND dailies_diva.guid_shot = uuid_to_bin(%s)
 		""", (shot.get("guid_shot"),))
 		
 		for diva_object in cur.fetchall():
@@ -123,7 +125,7 @@ def diva_restore_request():
 			INSERT INTO diva_requests(req_id, guid_shot, type, status, location)
 			VALUES (
 				%s,
-				unhex(%s),
+				uuid_to_bin(%s),
 				%s,
 				%s,
 				%s
@@ -147,10 +149,10 @@ def ale_from_shots():
 	
 	ale = upco_ale.Ale()
 	for shot in flask.request.json:
-		cur = mysql.connection.cursor()
+		cur = db.connection.cursor()
 		cur.execute("""
 			SELECT 
-				hex(dailies_shots.guid_shot) as guid_shot,
+				bin_to_uuid(dailies_shots.guid_shot) as guid_shot,
 				shot,
 				frm_start,
 				frm_end,
@@ -162,7 +164,7 @@ def ale_from_shots():
 				(SELECT proxy_name FROM dailies_proxies WHERE dailies_proxies.guid_shot = dailies_shots.guid_shot LIMIT 1) as proxy_name
 			FROM dailies_shots 
 			LEFT JOIN dailies_metadata ON dailies_metadata.guid_shot = dailies_shots.guid_shot 
-			WHERE dailies_shots.guid_shot = unhex(%s)
+			WHERE dailies_shots.guid_shot = uuid_to_bin(%s)
 		""",(shot.get("guid_shot"),))
 
 		shot_data = cur.fetchone()
@@ -183,7 +185,7 @@ def ale_from_shots():
 		}
 		
 		# Unpack and merge extended_info
-		if shot_data.get("extended_info"): shot_masterclip.update(json.loads(shot_data.get("extended_info")))
+		if shot_data.get("extended_info"): shot_masterclip.update(flask.json.loads(shot_data.get("extended_info")))
 		
 		# Remove problematic columns (Color, Tracks, etc) that confuse Avid if not present for all shots
 		removed = [shot_masterclip.pop(x) for x in ("Color","Tracks","Creation Date","Duration","Video","Videoframerate") if x in shot_masterclip.keys()]
