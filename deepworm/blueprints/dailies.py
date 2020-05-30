@@ -34,20 +34,14 @@ def list_shots_by_show(show):
 	cur = db.connection.cursor()	
 	cur.execute("""
 		SELECT
-			bin_to_uuid(dailies_shots.guid_shot) as guid_shot,
-			shot,
-			frm_start,
-			frm_end,
-			scene,
-			take,
-			camroll,
-			(SELECT object_name FROM dailies_diva WHERE dailies_diva.guid_shot = dailies_shots.guid_shot LIMIT 1) as diva_name,
-			(SELECT proxy_name FROM dailies_proxies WHERE dailies_proxies.guid_shot = dailies_shots.guid_shot) as proxy_name
-		FROM dailies_shots
-		LEFT JOIN dailies_metadata ON dailies_metadata.guid_shot = dailies_shots.guid_shot
-		#LEFT JOIN dailies_proxies ON dailies_proxies.guid_shot = dailies_shots.guid_shot
-		WHERE dailies_shots.guid_show = uuid_to_bin(%s)
-		ORDER BY dailies_metadata.camroll, dailies_shots.frm_start
+			bin_to_uuid(s.guid_shot) as guid_shot,
+			s.shot as shot,
+			s.frm_start as frm_start,
+			s.frm_end as frm_end,
+			m.extended_metadata as metadata
+		FROM dailies_shots s
+		LEFT JOIN dailies_metadata m ON m.guid_shot = s.guid_shot
+		WHERE s.guid_show = uuid_to_bin(%s)
 	""", (show,))
 	results = cur.fetchall()
 	
