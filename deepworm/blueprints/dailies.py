@@ -38,7 +38,7 @@ def list_shots_by_show(show):
 			s.shot as shot,
 			s.frm_start as frm_start,
 			s.frm_end as frm_end,
-			m.extended_metadata as metadata
+			IFNULL(m.extended_info, JSON_OBJECT()) as metadata
 		FROM dailies_shots s
 		LEFT JOIN dailies_metadata m ON m.guid_shot = s.guid_shot
 		WHERE s.guid_show = uuid_to_bin(%s)
@@ -150,9 +150,6 @@ def ale_from_shots():
 				shot,
 				frm_start,
 				frm_end,
-				scene,
-				take,
-				camroll,
 				extended_info,
 				(SELECT object_name FROM dailies_diva WHERE dailies_diva.guid_shot = dailies_shots.guid_shot LIMIT 1) as diva_name,
 				(SELECT proxy_name FROM dailies_proxies WHERE dailies_proxies.guid_shot = dailies_shots.guid_shot LIMIT 1) as proxy_name
@@ -167,6 +164,7 @@ def ale_from_shots():
 		elif shot_data.get("diva_name"): clip_name = shot_data.get("diva_name")
 		else: clip_name = shot.get("shot")
 		
+		# TODO: Get Scene/Take/Camroll info from extended_info json
 		shot_masterclip = {
 			
 			"Name": str(clip_name),
