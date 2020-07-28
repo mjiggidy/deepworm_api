@@ -10,25 +10,48 @@ from ..db import db
 
 dailies = flask.Blueprint("dailies", __name__, url_prefix="/dailies")
 
-@dailies.route("/v1/shows/")
+@dailies.route("/v1/shows/", methods=["POST","GET"])
 def list_shows_rest():
 	
 	cur = db.connection.cursor()
-	cur.execute("SELECT bin_to_uuid(guid_show) as guid_show, title FROM dailies_shows ORDER BY title")
-	results = cur.fetchall()
+
+	print(flask.request.method)
+	
+	# Generic show lookup
+	if flask.request.method == "GET":
+		cur.execute("SELECT bin_to_uuid(guid_show) as guid_show, title FROM dailies_shows ORDER BY title")
+		results = cur.fetchall()
+
+	# Specific show
+	# TODO: Split into searchShows method
+	elif flask.request.method == "POST":
+
+		if flask.request.form.get("guid_show") is not None:
+			cur.execute("SELECT bin_to_uuid(guid_show) as guid_show, title FROM dailies_shows WHERE guid_show=uuid_to_bin(%s) LIMIT 1", (flask.request.form.get("guid_show"),))
+			results = cur.fetchone()
+
+		elif flask.request.form.get("title") is not None:
+			cur.execute("SELECT bin_to_uuid(guid_show) as guid_show, title FROM dailies_shows WHERE title=%s LIMIT 1",(flask.request.form.get("title"),))
+			results = cur.fetchone()
+		
+		elif flask.request.form.get("title_search") is not None:
+			cur.execute("SELECT bin_to_uuid(guid_show) as guid_show, title FROM dailies_shows WHERE title LIKE %s", (f"%{flask.request.form.get('title_search')}%",))
+			results = cur.fetchall()
 	
 	return flask.jsonify(results)
 	
+# NOTE: Recent change fetchall()->fetchone()
 @dailies.route("/v1/shows/<string:show>")
 def list_show_details_rest(show):
 	
 	cur = db.connection.cursor()
 	cur.execute("SELECT bin_to_uuid(guid_show) as guid_show, title FROM dailies_shows WHERE guid_show = uuid_to_bin(%s) LIMIT 1", (show,))
-	results = cur.fetchall()
+	results = cur.fetchone()
 	
 	return flask.jsonify(results)
-	
-@dailies.route("/v1/shots/<string:show>")
+
+# NOTE: Recent change, may break some things
+@dailies.route("/v1/shows/<string:show>/shots/")
 def list_shots_by_show(show):
 
 	cur = db.connection.cursor()	
@@ -37,6 +60,7 @@ def list_shots_by_show(show):
 			bin_to_uuid(s.guid_shot) as guid_shot,
 			s.shot as shot,
 			s.frm_start as frm_start,
+			s.frm_duration as frm_duration,
 			s.frm_end as frm_end,
 			IFNULL(m.extended_info, JSON_OBJECT()) as metadata
 		FROM dailies_shots s
@@ -46,6 +70,89 @@ def list_shots_by_show(show):
 	results = cur.fetchall()
 	
 	return flask.jsonify(results)
+
+# NOTE: Recent change, may break some things
+@dailies.route("/v1/shots/<string:guid>/")
+def get_shot_by_guid(guid):
+
+	cur = db.connection.cursor()	
+	cur.execute("""
+		SELECT
+			bin_to_uuid(s.guid_shot) as guid_shot,
+			bin_to_uuid(s.guid_show) as guid_show,
+			s.shot as shot,
+			s.frm_start as frm_start,
+			s.frm_duration as frm_duration,
+			s.frm_end as frm_end,
+			IFNULL(m.extended_info, JSON_OBJECT()) as metadata
+		FROM dailies_shots s
+		LEFT JOIN dailies_metadata m ON m.guid_shot = s.guid_shot
+		WHERE s.guid_shot = uuid_to_bin(%s)
+		LIMIT 1
+	""", (guid,))
+	results = cur.fetchone()
+	
+	return flask.jsonify(results)
+
+
+@dailies.route("/v1/shots/", methods=["POST","GET"])
+def find_shot():
+	
+	cur = db.connection.cursor()
+	
+	# Generic show lookup
+	#if flask.request.method == "GET":
+	#	cur.execute("SELECT bin_to_uuid(guid_show) as guid_show, title FROM dailies_shows ORDER BY title")
+
+	# Specific show
+	# TODO: Split into searchShows method
+	if flask.request.method == "POST":
+
+		if flask.request.form.get("guid_shot") is not None:
+			cur.execute("""
+				SELECT
+					bin_to_uuid(s.guid_shot) as guid_shot,
+					bin_to_uuid(s.guid_show) as guid_show,
+					s.shot as shot,
+					s.frm_start as frm_start,
+					s.frm_duration as frm_duration,
+					s.frm_end as frm_end,
+					IFNULL(m.extended_info, JSON_OBJECT()) as metadata
+				FROM dailies_shots s
+				LEFT JOIN dailies_metadata m ON m.guid_shot = s.guid_shot
+				WHERE s.guid_shot = uuid_to_bin(%s)
+				LIMIT 1
+			""", (flask.request.form.get("guid_shot"),))
+			results = cur.fetchone()
+
+		else:
+			search = set()
+			for param in ("shot","frm_in","frm_duration"):
+				if flask.request.form.get(param) is not None:
+					search.add(param)
+			if not len(search):
+				results = []
+
+			else:
+				cur.execute(f"""
+					SELECT
+						bin_to_uuid(s.guid_shot) as guid_shot,
+						bin_to_uuid(s.guid_show) as guid_show,
+						s.shot as shot,
+						s.frm_start as frm_start,
+						s.frm_duration as frm_duration,
+						s.frm_end as frm_end,
+						IFNULL(m.extended_info, JSON_OBJECT()) as metadata
+					FROM dailies_shots s
+					LEFT JOIN dailies_metadata m ON m.guid_shot = s.guid_shot
+					WHERE {' AND '.join(str(x)+' = %s' for x in search)}
+				""", (flask.request.form.get(x) for x in search))
+				results = cur.fetchall()
+	
+	return flask.jsonify(results)
+
+
+
 
 @dailies.route("/v1/shots/<string:shot>/extended")
 def list_shot_exteded(shot):
