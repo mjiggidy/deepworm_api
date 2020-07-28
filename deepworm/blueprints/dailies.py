@@ -126,9 +126,10 @@ def find_shot():
 			results = cur.fetchone()
 
 		else:
+			metadata = flask.request.json.get("metadata")
 			search = set()
-			for param in ("shot","frm_in","frm_duration"):
-				if flask.request.form.get(param) is not None:
+			for param in ("shot","frm_start","frm_duration"):
+				if metadata.get(param) is not None:
 					search.add(param)
 			if not len(search):
 				results = []
@@ -146,7 +147,7 @@ def find_shot():
 					FROM dailies_shots s
 					LEFT JOIN dailies_metadata m ON m.guid_shot = s.guid_shot
 					WHERE {' AND '.join(str(x)+' = %s' for x in search)}
-				""", (flask.request.form.get(x) for x in search))
+				""", (metadata.get(x) for x in search))
 				results = cur.fetchall()
 	
 	return flask.jsonify(results)
