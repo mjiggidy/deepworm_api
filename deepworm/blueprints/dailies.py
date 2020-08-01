@@ -108,7 +108,7 @@ def find_shot():
 	# TODO: Split into searchShows method
 	if flask.request.method == "POST":
 
-		if flask.request.form.get("guid_shot") is not None:
+		if flask.request.json.get("guid_shot") is not None:
 			cur.execute("""
 				SELECT
 					bin_to_uuid(s.guid_shot) as guid_shot,
@@ -126,15 +126,47 @@ def find_shot():
 			results = cur.fetchone()
 
 		else:
-			metadata = flask.request.json.get("metadata")
-			search = set()
-			for param in ("guid_show","shot","frm_start","frm_duration"):
-				if metadata.get(param) is not None:
-					if param == "guid_show":
-						search.add(f"s.guid_show = uuid_to_bin(%s)")
+			search_query  = []
+			search_params = []
+			subclip = bool(flask.request.json.get("subclip"))
+
+			# Check for show
+			if flask.request.json.get("guid_show") is not None:
+				print("Limiting to show guid", flask.request.json.get("guid_show"))
+				search_query.append("s.guid_show = uuid_to_bin(%s)")
+				search_params.append(flask.request.json.get("guid_show"))
+			
+			# Check for shot properties
+			shot_properties = flask.request.json.get("shot")
+			for param in ("shot","frm_start","frm_duration","frm_end"):
+				if shot_properties.get(param) is not None:
+					if param == "guid_shot":
+						search_query.append("s.guid_shot = uuid_to_bin(%s)")
+
+					elif param == "frm_start":
+						search_query.append(f"s.frm_start {'<=' if subclip else '='} %s")
+					
+					elif param == "frm_end":
+						search_query.append(f"s.frm_end {'>=' if subclip else '='} %s")
+
+					elif param == "frm_duration":
+						search_query.append(f"s.frm_duration {'>=' if subclip else '='} %s")
+					
 					else:
-						search.add(f"s.{param} = %s")
-			if not len(search):
+						search_query.append(f"s.{param} = %s")
+					
+					search_params.append(shot_properties.get(param))
+
+			# Check for metadata
+			if flask.request.json.get("metadata"):
+				print("Searching for metadata", flask.request.json.get("metadata"))
+				search_query.append("JSON_CONTAINS(m.extended_info, %s)")
+				search_params.append(flask.json.dumps(flask.request.json.get("metadata")))
+			
+			print(tuple(search_query))
+			print(tuple(search_params))
+			
+			if not len(search_query):
 				results = []
 
 			else:
@@ -149,9 +181,9 @@ def find_shot():
 						IFNULL(m.extended_info, JSON_OBJECT()) as metadata
 					FROM dailies_shots s
 					LEFT JOIN dailies_metadata m ON m.guid_shot = s.guid_shot
-					WHERE {' AND '.join(x for x in search)}
-				""", (metadata.get(x) for x in metadata.keys()))
-				print(cur._last_executed)
+					WHERE {' AND '.join(x for x in search_query)}
+				""", tuple(search_params))
+				print("Last query was:", cur._last_executed)
 				results = cur.fetchall()
 	
 	return flask.jsonify(results)
