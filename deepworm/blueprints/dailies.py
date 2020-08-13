@@ -1,6 +1,6 @@
 import flask
 import subprocess, pathlib, tempfile, sys
-from upco_tools import upco_ale, upco_timecode
+from upco_tools import upco_ale, upco_timecode, upco_diva
 from ..db import db
 
 
@@ -183,12 +183,42 @@ def find_shot():
 					LEFT JOIN dailies_metadata m ON m.guid_shot = s.guid_shot
 					WHERE {' AND '.join(x for x in search_query)}
 				""", tuple(search_params))
-				print("Last query was:", cur._last_executed)
+	#			print("Last query was:", cur._last_executed)
 				results = cur.fetchall()
 	
 	return flask.jsonify(results)
 
 
+@dailies.route("/v1/shots/<string:guid_shot>/divarestore")
+def diva_restore_shot(guid_shot):
+
+	cur = db.connection.cursor()
+	cur.execute("""
+		SELECT
+			d.object_name as object_name,
+			c.category as category,
+			c.src_dest as src_dest
+		FROM 
+			dailies_shots s
+		INNER JOIN
+			diva_config c ON c.guid_show = s.guid_show			
+		INNER JOIN
+			dailies_diva d ON d.guid_shot = s.guid_shot
+		WHERE
+			s.guid_shot = uuid_to_bin(%s)
+		""", (guid_shot,))
+		
+	results = cur.fetchall()
+
+	diva = upco_diva.Diva(manager_ip="192.168.20.220", manager_port=9000)
+	restores = []
+
+	for result in results:
+		restores.append(diva.restoreObject(result.get("object_name"), result.get("category"), destination=result.get("src_dest")))
+
+	print(restores)
+	
+	return flask.jsonify(results)
 
 
 @dailies.route("/v1/shots/<string:shot>/extended")
