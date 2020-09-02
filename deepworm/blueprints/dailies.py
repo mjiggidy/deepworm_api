@@ -196,6 +196,7 @@ def diva_restore_shot(guid_shot):
 	cur.execute("""
 		SELECT
 			d.object_name as object_name,
+			c.tv_path as tv_path,
 			c.category as category,
 			c.src_dest as src_dest
 		FROM 
@@ -214,6 +215,16 @@ def diva_restore_shot(guid_shot):
 	restores = []
 
 	for result in results:
+
+		# Check if exists
+		try:
+			path_file = pathlib.Path(result.get("tv_path"), result.get("object_name") + ".mov")
+			if path_file.is_file():
+				print(f"Skipping {path_file.stem}: Already exists at {path_file.resolve()}")
+				continue
+		except Exception as e:
+			print(f"Error checking for {result.get('object_name')}, will restore again: {e}")
+
 		restores.append(diva.restoreObject(result.get("object_name"), result.get("category"), destination=result.get("src_dest")))
 
 	print(restores)
@@ -237,7 +248,8 @@ def list_shot_exteded(shot):
 		return results.get("extended_info")
 	else:
 		return flask.jsonify({})
-		
+
+# OLD
 @dailies.route("/v1/diva/restore", methods=["POST"])
 def diva_restore_request():
 
@@ -256,7 +268,8 @@ def diva_restore_request():
 				bin_to_uuid(dailies_diva.guid_show) as guid_show,
 				dailies_diva.object_name as object_name,
 				diva_config.category as category,
-				diva_config.src_dest as src_dest
+				diva_config.src_dest as src_dest,
+				diva_config.tv_path as tv_path,
 			FROM
 				dailies_diva, diva_config
 			WHERE
