@@ -134,3 +134,4 @@ dmypy.json
 deepworm/config.py
 deepworm/config.py
 deepworm/server_main.py
+instance/config.cfg

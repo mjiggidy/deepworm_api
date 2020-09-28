@@ -2,6 +2,7 @@ import flask
 import pathlib, tempfile, sys
 from upco_tools import upco_ale, upco_timecode, upco_diva
 from ..db import db
+from ..resources import dailies as db_dailies
 
 
 # TAPEWORM Rest API
@@ -54,43 +55,23 @@ def list_show_details_rest(show):
 @dailies.route("/v1/shows/<string:show>/shots/")
 def list_shots_by_show(show):
 
-	cur = db.connection.cursor()	
-	cur.execute("""
-		SELECT
-			bin_to_uuid(s.guid_shot) as guid_shot,
-			s.shot as shot,
-			s.frm_start as frm_start,
-			s.frm_duration as frm_duration,
-			s.frm_end as frm_end,
-			IFNULL(m.extended_info, JSON_OBJECT()) as metadata
-		FROM dailies_shots s
-		LEFT JOIN dailies_metadata m ON m.guid_shot = s.guid_shot
-		WHERE s.guid_show = uuid_to_bin(%s)
-	""", (show,))
-	results = cur.fetchall()
-	
+	try:
+		results = db_dailies.getShots(guid_show=show)
+	except Exception as e:
+		print(f"MySQL error in list_shots_by_show: {e}")
+		results = []
+
 	return flask.jsonify(results)
 
 # NOTE: Recent change, may break some things
 @dailies.route("/v1/shots/<string:guid>/")
 def get_shot_by_guid(guid):
-
-	cur = db.connection.cursor()	
-	cur.execute("""
-		SELECT
-			bin_to_uuid(s.guid_shot) as guid_shot,
-			bin_to_uuid(s.guid_show) as guid_show,
-			s.shot as shot,
-			s.frm_start as frm_start,
-			s.frm_duration as frm_duration,
-			s.frm_end as frm_end,
-			IFNULL(m.extended_info, JSON_OBJECT()) as metadata
-		FROM dailies_shots s
-		LEFT JOIN dailies_metadata m ON m.guid_shot = s.guid_shot
-		WHERE s.guid_shot = uuid_to_bin(%s)
-		LIMIT 1
-	""", (guid,))
-	results = cur.fetchone()
+	print("Usin the new one")
+	try:
+		results = db_dailies.getShots(guid_shot=guid)
+	except Exception as e:
+		print(f"MySQL error in list_shots_by_show: {e}")
+		results = []
 	
 	return flask.jsonify(results)
 
