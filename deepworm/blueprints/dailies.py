@@ -1,5 +1,6 @@
 import flask
 import pathlib, tempfile, sys
+from flask_mysqldb import MySQLdb
 from upco_tools import upco_ale, upco_timecode, upco_diva
 from ..db import db
 from ..resources import dailies as db_dailies
@@ -62,6 +63,49 @@ def list_shots_by_show(show):
 		results = []
 
 	return flask.jsonify(results)
+
+@dailies.route("/v1/shows/<string:show>/selects/", methods=["POST"])
+def addSelect(show):
+
+	cur = db.connection.cursor()
+
+	shot_info = flask.request.json
+	
+	# Try to insert
+	
+	try:
+		cur.execute("""
+			INSERT INTO
+				dailies_selects(guid_show, guid_shot, reel, frm_start, frm_duration)
+			VALUES
+				(uuid_to_bin(%(guid_show)s), (SELECT guid_shot FROM dailies_shots WHERE shot = %(shot)s AND frm_start <= %(frm_start)s AND frm_end >= %(frm_end)s), %(selects_reel)s, %(frm_start)s, %(frm_end)s-%(frm_start)s)
+		""", shot_info)
+	except MySQLdb._exceptions.IntegrityError as e:
+		print("already there bruh")
+	except Exception as e:
+		print("Error", type(e))
+		return flask.jsonify({})
+	
+	# Whether or not inserted, get scan
+
+	try:
+		cur.execute("""
+			SELECT reel as selects_reel, metadata FROM view_selects WHERE shot=%(shot)s AND frm_start = %(frm_start)s AND frm_end=%(frm_end)s ORDER BY date_added DESC LIMIT 1
+		""", shot_info)
+		result = cur.fetchall()
+	except Exception as e:
+		print(f"Error getting it: {type(e)}")
+		return flask.jsonify({})
+
+	cur.close()
+	db.connection.commit()
+
+	return flask.jsonify(result[0])
+	
+
+
+
+
 
 # NOTE: Recent change, may break some things
 @dailies.route("/v1/shots/<string:guid>/")
@@ -159,6 +203,7 @@ def find_shot():
 						s.frm_start as frm_start,
 						s.frm_duration as frm_duration,
 						s.frm_end as frm_end,
+						CAST(s.frm_rate as CHAR) as frm_rate,
 						IFNULL(m.extended_info, JSON_OBJECT()) as metadata
 					FROM dailies_shots s
 					LEFT JOIN dailies_metadata m ON m.guid_shot = s.guid_shot
