@@ -64,44 +64,31 @@ def list_shots_by_show(show):
 
 	return flask.jsonify(results)
 
-@dailies.route("/v1/shows/<string:show>/selects/", methods=["POST"])
+@dailies.route("/v1/shows/<string:show>/selects/add", methods=["POST"])
 def addSelect(show):
-
-	cur = db.connection.cursor()
 
 	shot_info = flask.request.json
 	
-	# Try to insert
+	try:
+		results = db_dailies.addSelect(shot_info.get("guid_show"), shot_info.get("shot_name"), shot_info.get("frm_start"), shot_info.get("frm_end"), shot_info.get("selects_reel"))
+	except Exception as e:
+		print("Error: ",e)
+		results = []
+
+	return flask.jsonify(results)
+
+
+@dailies.route("/v1/shows/<string:show>/selects/search", methods=["POST"])
+def searchSelects(show):
+
+	search_info = flask.request.json
 	
 	try:
-		cur.execute("""
-			INSERT INTO
-				dailies_selects(guid_show, guid_shot, reel, frm_start, frm_duration)
-			VALUES
-				(uuid_to_bin(%(guid_show)s), (SELECT guid_shot FROM dailies_shots WHERE shot = %(shot)s AND frm_start <= %(frm_start)s AND frm_end >= %(frm_end)s), %(selects_reel)s, %(frm_start)s, %(frm_end)s-%(frm_start)s)
-		""", shot_info)
-	except MySQLdb._exceptions.IntegrityError as e:
-		print("already there bruh")
+		result = db_dailies.searchSelects(search_info)
 	except Exception as e:
-		print("Error", type(e))
-		return flask.jsonify({})
-	
-	# Whether or not inserted, get scan
+		print("Error: ",e)
 
-	try:
-		cur.execute("""
-			SELECT reel as selects_reel, metadata FROM view_selects WHERE shot=%(shot)s AND frm_start = %(frm_start)s AND frm_end=%(frm_end)s ORDER BY date_added DESC LIMIT 1
-		""", shot_info)
-		result = cur.fetchall()
-	except Exception as e:
-		print(f"Error getting it: {type(e)}")
-		return flask.jsonify({})
-
-	cur.close()
-	db.connection.commit()
-
-	return flask.jsonify(result[0])
-	
+	return flask.jsonify(result)
 
 
 
@@ -258,21 +245,33 @@ def diva_restore_shot(guid_shot):
 	results = cur.fetchall()
 
 	diva = upco_diva.Diva(manager_ip="192.168.20.220", manager_port=9000)
+
+	if len(results) == 0:
+		print("No results")
+	
+	# TODO: Cleanup restores[] vs returned json results[]
+	
 	restores = []
+	restores_return = []
 
 	for result in results:
 
 		# Check if exists
 		try:
 			path_file = pathlib.Path(result.get("tv_path"), result.get("object_name") + ".mov")
+			result.update({"file_path": str(path_file), "file_name": path_file.name, "already_exists": False})
 			if path_file.is_file():
 				print(f"Skipping {path_file.stem}: Already exists at {path_file.resolve()}")
+				result.update({"already_exists":True})
+				restores_return.append(result)
 				continue
+
 		except Exception as e:
 			print(f"Error checking for {result.get('object_name')}, will restore again: {e}")
 
 		restores.append(diva.restoreObject(result.get("object_name"), result.get("category"), destination=result.get("src_dest")))
+		restores_return.append(result)
 
 	print(restores)
 	
-	return flask.jsonify(results)
+	return flask.jsonify(restores_return)
