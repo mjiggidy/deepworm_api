@@ -30,6 +30,8 @@ def list_shows_rest():
 			dailies_shows shows
 		INNER JOIN
 			diva_config diva on diva.guid_show = shows.guid_show
+		ORDER BY
+			title
 	""")
 	results = cur.fetchall()
 
