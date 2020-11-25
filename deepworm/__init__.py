@@ -2,6 +2,7 @@ import pathlib
 import flask, flask_mysqldb
 from .db import db
 from .blueprints.dailies import dailies
+from .blueprints.diva import diva
 
 def create_app(test_config = None):
 	app = flask.Flask(__name__, instance_relative_config=True)
@@ -20,6 +21,7 @@ def create_app(test_config = None):
 
 	# Register Blueprints
 	app.register_blueprint(dailies)
+	app.register_blueprint(diva)
 
 	# Create instance path
 	try:

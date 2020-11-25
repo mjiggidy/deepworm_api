@@ -9,23 +9,16 @@ def getShots(guid_show=None, guid_shot=None):
 	# TODO: I think I'm overcomplicating things here
 	params = ""
 	if guid_shot is not None:
-		params = "WHERE guid_shot = uuid_to_bin(%s) LIMIT 1"
+		params = "WHERE guid_shot = %s LIMIT 1"
 	elif guid_show is not None:
-		params = "Where guid_show = uuid_to_bin(%s)"
+		params = "Where guid_show = %s"
 
 	print(f"Using params: {params} with args {tuple([guid_shot or guid_show])}")
 
 	cur = db.connection.cursor()	
 	cur.execute(f"""
 		SELECT
-			bin_to_uuid(guid_show) as guid_show,
-			bin_to_uuid(guid_shot) as guid_shot,
-			shot,
-			frm_start,
-			frm_duration,
-			frm_end,
-			frm_rate,
-			metadata
+			*
 		FROM view_shotinfo
 		{params}
 	""", tuple([guid_shot or guid_show]))
@@ -70,7 +63,7 @@ def searchSelects(guid_show=None, guid_shot=None, shot_name=None, selects_reel=N
 	values = []
 
 	if guid_show is not None:
-		params.append("guid_show = uuid_to_bin(%s)")
+		params.append("guid_show = %s")
 		values.append(guid_show)
 	
 	if selects_reel is not None:
@@ -78,7 +71,7 @@ def searchSelects(guid_show=None, guid_shot=None, shot_name=None, selects_reel=N
 		values.append(selects_reel)
 	
 	if guid_shot is not None:
-		params.append("guid_shot = uuid_to_bin(%s)")
+		params.append("guid_shot = %s")
 		values.append(guid_shot)
 	
 	elif shot_name is not None:
